@@ -29,12 +29,7 @@ SCRAPING_CONFIG = {
 
 # File Paths
 DATA_PATHS = {
-    'raw': 'data/raw',
-    'processed': 'data/processed',
-    'raw_reviews': 'data/raw/reviews_raw.csv',
-    'processed_reviews': 'data/processed/reviews_processed.csv',
-    'sentiment_results': 'data/processed/reviews_with_sentiment.csv',
-    'final_results': 'data/processed/reviews_final.csv'
+    'processed': '../data/processed', 
 }
 
 
