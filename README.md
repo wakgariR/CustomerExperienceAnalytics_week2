@@ -46,3 +46,37 @@ CREATE TABLE reviews (
         ON DELETE CASCADE
 );
 ```
+
+##### After all reviews and bank inserted you can populte the review
+
+- to get all reviews
+
+```
+SELECT * FROM reviews;
+```
+
+![alt text](image-2.png)
+
+- Count total reviews per bank
+
+```
+SELECT b.bank_name, COUNT(r.review_id) AS total_reviews
+FROM banks b
+LEFT JOIN reviews r ON b.bank_id = r.bank_id
+GROUP BY b.bank_name
+ORDER BY total_reviews DESC;
+```
+
+![alt text](image-3.png)
+
+- Average rating per bank
+
+```
+SELECT b.bank_name, ROUND(AVG(r.rating), 2) AS avg_rating
+FROM banks b
+LEFT JOIN reviews r ON b.bank_id = r.bank_id
+GROUP BY b.bank_name
+ORDER BY avg_rating DESC;
+```
+
+![alt text](image-4.png)
