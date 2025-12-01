@@ -26,6 +26,8 @@ VALUES
     ('DashenBank', 'Dashen Bank');
 ```
 
+- to check the inserted bank use select sript
+  ![alt text](image-1.png)
 - To create reviews use this query
 
 ```
