@@ -2,6 +2,7 @@ import sys
 import os
 import pandas as pd
 from tqdm import tqdm
+import collections
 # --- Sentiment Analysis Imports ---
 # NOTE: The user MUST install the nltk library for VADER analysis:
 # pip install nltk
@@ -310,3 +311,123 @@ def assign_themes_to_reviews(df: pd.DataFrame, keyword_to_theme: dict) -> pd.Dat
     
     print(f"Theme assignment complete. Added 'identified_themes' column.")
     return df
+# --- 8. NEW: Drivers and Pain Points Identification ---
+
+def identify_drivers_and_pain_points(df: pd.DataFrame, top_n: int = 3) -> dict:
+    """
+    Identifies the top N thematic drivers (themes in POSITIVE reviews) and 
+    pain points (themes in NEGATIVE reviews) for each bank.
+
+    Args:
+        df (pd.DataFrame): The DataFrame containing 'bank', 'sentiment_label', 
+                           and 'identified_themes'.
+        top_n (int): The number of top drivers/pain points to identify.
+
+    Returns:
+        dict: A dictionary structured as {bank_name: {drivers: [], pain_points: []}}.
+    """
+    if 'identified_themes' not in df.columns:
+        print("Skipping drivers/pain points identification: Missing 'identified_themes' column.")
+        return {}
+        
+    print("\n--- Identifying Top Drivers and Pain Points Per Bank ---")
+    
+    banks = df['bank'].unique()
+    analysis_results = {}
+    
+    for bank in tqdm(banks, desc="Analyzing Drivers & Pain Points"):
+        bank_data = df[df['bank'] == bank]
+        
+        # --- 1. Identify Drivers (Themes in POSITIVE Reviews) ---
+        positive_reviews = bank_data[bank_data['sentiment_label'] == 'POSITIVE']
+        
+        # Flatten the list of lists in 'identified_themes' column
+        all_positive_themes = [theme for sublist in positive_reviews['identified_themes'] for theme in sublist]
+        
+        # Count the frequency of each theme
+        driver_counts = collections.Counter(all_positive_themes)
+        
+        # Get the top N drivers as a list of tuples (Theme, Count)
+        top_drivers = driver_counts.most_common(top_n)
+        
+        
+        # --- 2. Identify Pain Points (Themes in NEGATIVE Reviews) ---
+        negative_reviews = bank_data[bank_data['sentiment_label'] == 'NEGATIVE']
+        
+        # Flatten the list of lists
+        all_negative_themes = [theme for sublist in negative_reviews['identified_themes'] for theme in sublist]
+        
+        # Count the frequency of each theme
+        pain_point_counts = collections.Counter(all_negative_themes)
+        
+        # Get the top N pain points as a list of tuples (Theme, Count)
+        top_pain_points = pain_point_counts.most_common(top_n)
+        
+        # Store results
+        analysis_results[bank] = {
+            'drivers': [f"{theme} ({count} mentions)" for theme, count in top_drivers],
+            'pain_points': [f"{theme} ({count} mentions)" for theme, count in top_pain_points]
+        }
+        
+        print("Driver and Pain Point analysis complete.")
+        return analysis_results
+
+    
+# --- Theme Sentiment Distribution for Comparison ---
+def get_theme_sentiment_distribution(df: pd.DataFrame, min_theme_mentions: int = 50) -> pd.DataFrame:
+    """
+    Calculates the distribution of POSITIVE/NEGATIVE/NEUTRAL sentiment 
+    for major themes, broken down by bank.
+
+    Args:
+        df: DataFrame with 'bank', 'sentiment_label', and 'identified_themes'.
+        min_theme_mentions: Minimum total mentions required for a theme to be included.
+
+    Returns:
+        pd.DataFrame: A comparative table of theme sentiment percentages.
+    """
+    if 'identified_themes' not in df.columns:
+        print("Error: 'identified_themes' column is missing for comparative analysis.")
+        return pd.DataFrame()
+        
+    print("\n--- Calculating Comparative Theme Sentiment Distribution ---")
+
+    # 1. Expand the DataFrame: one row per theme mention
+    exploded_df = df.explode('identified_themes')
+    exploded_df = exploded_df.rename(columns={'identified_themes': 'theme'})
+    
+    # Remove rows where theme is None (i.e., reviews without a key theme)
+    exploded_df.dropna(subset=['theme'], inplace=True)
+    
+    # 2. Filter out low-frequency themes globally
+    theme_counts = exploded_df['theme'].value_counts()
+    frequent_themes = theme_counts[theme_counts >= min_theme_mentions].index
+    
+    comparative_df = exploded_df[exploded_df['theme'].isin(frequent_themes)]
+    
+    # 3. Calculate sentiment count per bank and theme
+    theme_sentiment_counts = comparative_df.groupby(['bank', 'theme', 'sentiment_label']).size().reset_index(name='count')
+    
+    # 4. Pivot and calculate total
+    pivot_df = theme_sentiment_counts.pivot_table(
+        index=['bank', 'theme'], 
+        columns='sentiment_label', 
+        values='count', 
+        fill_value=0
+    ).reset_index()
+
+    # Ensure all labels exist
+    for label in ['POSITIVE', 'NEGATIVE', 'NEUTRAL']:
+        if label not in pivot_df.columns:
+            pivot_df[label] = 0
+
+    pivot_df['Total Mentions'] = pivot_df[['POSITIVE', 'NEGATIVE', 'NEUTRAL']].sum(axis=1)
+
+    # 5. Calculate percentages
+    for label in ['POSITIVE', 'NEGATIVE', 'NEUTRAL']:
+        pivot_df[f'{label} %'] = (pivot_df[label] / pivot_df['Total Mentions']) * 100
+
+    print("Comparative Theme Sentiment Distribution Table:")
+    print(pivot_df[['bank', 'theme', 'POSITIVE %', 'NEGATIVE %', 'Total Mentions']].sort_values(by=['theme', 'bank']))
+    
+    return pivot_df
