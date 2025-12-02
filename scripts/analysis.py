@@ -64,6 +64,11 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 # --- End Thematic Analysis Imports ---
 
 
+# --- Visualization Imports ---
+import matplotlib.pyplot as plt
+import numpy as np
+# --- End Visualization Imports ---
+
 # ---Text Normalization Function ---
 
 def normalize_text(df: pd.DataFrame) -> pd.DataFrame:
@@ -369,8 +374,8 @@ def identify_drivers_and_pain_points(df: pd.DataFrame, top_n: int = 3) -> dict:
             'pain_points': [f"{theme} ({count} mentions)" for theme, count in top_pain_points]
         }
         
-        print("Driver and Pain Point analysis complete.")
-        return analysis_results
+    print("Driver and Pain Point analysis complete.")
+    return analysis_results
 
     
 # --- Theme Sentiment Distribution for Comparison ---
@@ -431,3 +436,140 @@ def get_theme_sentiment_distribution(df: pd.DataFrame, min_theme_mentions: int =
     print(pivot_df[['bank', 'theme', 'POSITIVE %', 'NEGATIVE %', 'Total Mentions']].sort_values(by=['theme', 'bank']))
     
     return pivot_df
+
+# --- Visualization ---
+
+def plot_theme_sentiment_distribution(comparative_df: pd.DataFrame):
+    """
+    Creates a comparative stacked bar chart of theme sentiment across banks.
+    """
+    if comparative_df.empty:
+        print("Cannot plot comparison: comparative_df is empty.")
+        return
+
+    # Select the top 4 themes overall for plotting clarity
+    themes_to_plot = comparative_df['theme'].value_counts().nlargest(4).index.tolist()
+    plot_data = comparative_df[comparative_df['theme'].isin(themes_to_plot)].copy()
+
+    # Prep for plotting
+    plot_data['theme_bank'] = plot_data['theme'] + ' - ' + plot_data['bank']
+    
+    labels = ['POSITIVE %', 'NEUTRAL %', 'NEGATIVE %']
+    colors = ['#10B981', '#FCD34D', '#EF4444'] # Tailwind green, amber, red
+
+    fig, ax = plt.subplots(figsize=(14, 8))
+    
+    # Plotting the stacked bars
+    current_bottom = [0] * len(plot_data)
+    
+    for label, color in zip(labels, colors):
+        ax.bar(plot_data['theme_bank'], plot_data[label], bottom=current_bottom, label=label, color=color)
+        current_bottom = current_bottom + plot_data[label]
+
+    # Clean up the chart
+    ax.set_title('Comparative Bank Performance by Key Thematic Sentiment', fontsize=16)
+    ax.set_ylabel('Percentage of Reviews Mentioning Theme', fontsize=12)
+    ax.set_xticks(np.arange(len(plot_data['theme_bank'])))
+    ax.set_xticklabels(plot_data['theme_bank'], rotation=45, ha='right')
+    
+    # Add separating lines between themes for clarity
+    theme_boundaries = []
+    current_theme = None
+    for i, (theme, bank) in enumerate(zip(plot_data['theme'], plot_data['bank'])):
+        if theme != current_theme:
+            if i > 0:
+                theme_boundaries.append(i - 0.5)
+            current_theme = theme
+            
+    for boundary in theme_boundaries:
+        ax.axvline(x=boundary, color='gray', linestyle='--', linewidth=1)
+
+    ax.legend(title='Sentiment', bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.tight_layout()
+    plt.show()
+    plt.close(fig)
+
+    print("Comparative Theme Sentiment Visualization displayed.")
+
+
+# ---Generate Improvement Suggestions Function ---
+
+def generate_improvement_suggestions(comparative_df: pd.DataFrame) -> dict:
+    """
+    Generates actionable improvement suggestions based on the comparative sentiment data.
+
+    Suggestions focus on:
+    1. Addressing the largest internal pain point (highest Negative %).
+    2. Addressing the largest competitive gap (biggest lag in Positive % vs. rival).
+    
+    Returns:
+        dict: Suggestions structured by bank.
+    """
+    suggestions = {}
+    banks = comparative_df['bank'].unique()
+    
+    if len(banks) < 2:
+        return {} # Need at least two banks for comparative analysis
+
+    bank1, bank2 = banks[0], banks[1]
+
+    for current_bank in banks:
+        current_suggestions = []
+        rival_bank = bank2 if current_bank == bank1 else bank1
+        
+        # Filter data for the current bank
+        current_data = comparative_df[comparative_df['bank'] == current_bank].copy()
+        rival_data = comparative_df[comparative_df['bank'] == rival_bank].copy()
+
+        # --- 1. Identify Largest Internal Pain Point (Highest Negative %) ---
+        if not current_data.empty:
+            pain_point_theme = current_data.loc[current_data['NEGATIVE %'].idxmax()]
+            theme_name = pain_point_theme['theme']
+            neg_pct = pain_point_theme['NEGATIVE %']
+            
+            suggestion = (
+                f"**Critical Priority Fix:** Focus on the '{theme_name}' theme, which has the bank's highest negative sentiment ({neg_pct:.1f}%). "
+                f"This suggests fundamental defects. Launch an immediate bug triage and user flow audit for all components related to this theme (e.g., login, transfer flows)."
+            )
+            current_suggestions.append(suggestion)
+
+        # --- 2. Identify Largest Competitive Gap (Lagging Positive %) ---
+        if not current_data.empty and not rival_data.empty:
+            # Merge data for direct comparison
+            merged_df = pd.merge(
+                current_data[['theme', 'POSITIVE %', 'NEGATIVE %']],
+                rival_data[['theme', 'POSITIVE %', 'NEGATIVE %']],
+                on='theme',
+                suffixes=('_current', '_rival')
+            )
+            
+            # Calculate competitive gap (Current Positive % - Rival Positive %)
+            merged_df['Positive Gap'] = merged_df['POSITIVE %_current'] - merged_df['POSITIVE %_rival']
+            
+            # Find the largest negative gap (where the current bank performs worst relative to rival)
+            if not merged_df.empty:
+                largest_lag = merged_df.loc[merged_df['Positive Gap'].idxmin()]
+                lag_theme = largest_lag['theme']
+                gap = largest_lag['Positive Gap']
+                rival_pos = largest_lag['POSITIVE %_rival']
+                
+                # Only suggest if the gap is significant (e.g., more than 5%)
+                if gap < -5:
+                    suggestion = (
+                        f"**Competitive Focus:** The bank significantly lags in '{lag_theme}' (Positive Gap: {gap:.1f}%). "
+                        f"The rival {rival_bank} achieves {rival_pos:.1f}% positive sentiment here. "
+                        f"Conduct a competitive teardown of {rival_bank}'s specific implementation for this feature/service to rapidly close the performance gap."
+                    )
+                    current_suggestions.append(suggestion)
+                elif len(current_suggestions) < 2:
+                     # Fallback suggestion if the competitive gap isn't big enough for the second point
+                    suggestion = (
+                        f"**Feature Enhancement:** Despite a high internal rating, the bank is losing ground in 'Feature Requests & Missing Functionality'. "
+                        f"Prioritize implementing the top-requested features to maintain a competitive edge and reduce the long-term negative drift in this area."
+                    )
+                    current_suggestions.append(suggestion)
+
+
+        suggestions[current_bank] = current_suggestions
+        
+    return suggestions
