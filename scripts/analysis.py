@@ -573,3 +573,116 @@ def generate_improvement_suggestions(comparative_df: pd.DataFrame) -> dict:
         suggestions[current_bank] = current_suggestions
         
     return suggestions
+# ---Visualization Functions
+
+def plot_rating_distribution(df: pd.DataFrame):
+    """
+    Plots the count of each star rating (1-5) for all banks.
+    """
+    plt.figure(figsize=(10, 6))
+    
+    # Calculate counts of each rating for each bank
+    rating_counts = df.groupby(['bank', 'rating']).size().reset_index(name='count')
+    
+    # Define bar width and positions
+    banks = df['bank'].unique()
+    n_banks = len(banks)
+    ratings = sorted(df['rating'].unique())
+    n_ratings = len(ratings)
+    
+    bar_width = 0.8 / n_banks
+    r = np.arange(n_ratings)
+    
+    colors = plt.cm.get_cmap('viridis', n_banks) 
+
+    for i, bank in enumerate(banks):
+        bank_data = rating_counts[rating_counts['bank'] == bank]
+        
+        # Ensure all ratings are present for consistent plotting
+        plot_data = bank_data.set_index('rating').reindex(ratings, fill_value=0)['count']
+        
+        # Position for the bar group
+        x_pos = r + i * bar_width - (n_banks - 1) * bar_width / 2
+        
+        plt.bar(x_pos, plot_data, color=colors(i), width=bar_width, edgecolor='grey', label=bank)
+
+    plt.title('Comparative Star Rating Distribution Across Banks', fontsize=16)
+    plt.xlabel('Star Rating (1 = Worst, 5 = Best)', fontsize=12)
+    plt.ylabel('Number of Reviews', fontsize=12)
+    plt.xticks(r, ratings)
+    plt.legend(title='Bank', loc='upper right')
+    plt.grid(axis='y', linestyle='--', alpha=0.6)
+    plt.tight_layout()
+    plt.show()
+    print("Plot 1: Rating Distribution displayed.")
+
+
+def plot_sentiment_trends(df: pd.DataFrame):
+    """
+    Plots the rolling mean of the compound sentiment score over time (monthly).
+    """
+    plt.figure(figsize=(12, 7))
+    
+    # Ensure 'date' is the index for time-series operations
+    df_ts = df[['date', 'bank', 'compound_score']].set_index('date').sort_index()
+
+    for bank in df_ts['bank'].unique():
+        bank_data = df_ts[df_ts['bank'] == bank]
+        
+        # Resample data monthly and calculate the mean compound score
+        monthly_sentiment = bank_data['compound_score'].resample('M').mean().dropna()
+        
+        if not monthly_sentiment.empty:
+            plt.plot(
+                monthly_sentiment.index, 
+                monthly_sentiment.values, 
+                marker='o', 
+                linestyle='-', 
+                label=bank
+            )
+
+    plt.title('Monthly Average Sentiment Trend (VADER Compound Score)', fontsize=16)
+    plt.xlabel('Date', fontsize=12)
+    plt.ylabel('Average Compound Sentiment Score (Higher is Better)', fontsize=12)
+    plt.axhline(y=0, color='r', linestyle='--', alpha=0.5, label='Neutral Threshold (0.0)')
+    plt.legend(title='Bank')
+    plt.grid(True, linestyle=':', alpha=0.7)
+    plt.tight_layout()
+    plt.show()
+    print("Plot 2: Sentiment Trend over time displayed.")
+    
+
+def plot_top_keywords(keywords_df: pd.DataFrame):
+    """
+    Plots the top N high-scoring keywords/themes from the TF-IDF analysis.
+    """
+    if keywords_df.empty:
+        print("Cannot plot keywords: keywords_df is empty.")
+        return
+        
+    # Filter out 'Other/General' and take the top 15 highest scoring keywords
+    plot_data = keywords_df[keywords_df['assigned_theme'] != 'Other/General'].sort_values(by='tfidf_score', ascending=False).head(15)
+    
+    plt.figure(figsize=(12, 6))
+    
+    # Use different colors based on the assigned theme
+    themes = plot_data['assigned_theme'].unique()
+    theme_colors = plt.cm.get_cmap('Set3', len(themes))
+    color_map = {theme: theme_colors(i) for i, theme in enumerate(themes)}
+    
+    colors = [color_map[theme] for theme in plot_data['assigned_theme']]
+    
+    plt.barh(plot_data['keyword_phrase'], plot_data['tfidf_score'], color=colors)
+    
+    # Create custom legend for themes
+    handles = [plt.Rectangle((0,0),1,1, color=color_map[theme]) for theme in themes]
+    plt.legend(handles, themes, title="Assigned Theme", loc='lower right')
+
+    plt.title('Top 15 Most Dominant Keywords and Themes (by TF-IDF Score)', fontsize=16)
+    plt.xlabel('TF-IDF Score (Importance/Frequency)', fontsize=12)
+    plt.ylabel('Keyword / N-gram', fontsize=12)
+    plt.gca().invert_yaxis() # Highest score at the top
+    plt.tight_layout()
+    plt.show()
+    print("Plot 3: Top Keywords/Themes displayed.")
+   
